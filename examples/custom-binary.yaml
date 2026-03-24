@@ -1,0 +1,24 @@
+# Run a custom P2P node binary inside Alpine containers.
+# Build your binary for linux/amd64 first:
+#   GOOS=linux GOARCH=amd64 go build -o build/my-p2p-node ./cmd/node
+nodes:
+  image: alpine
+  count: 3
+  binary:
+    path: ./build/my-p2p-node
+    args: ["--listen", "0.0.0.0:9000", "--data-dir", "/data"]
+
+events:
+  - at: 10s
+    action: stop
+    target: node-2
+
+  - at: 20s
+    action: restart
+    target: node-2
+
+  - at: 30s
+    action: latency
+    target: node-*
+    params:
+      ms: "200"

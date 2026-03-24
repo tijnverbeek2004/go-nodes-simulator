@@ -1,0 +1,34 @@
+# Spin up a real Ethereum Clique PoA devnet and chaos-test it.
+# All 4 nodes are sealers — Clique needs >50% online to produce blocks.
+# Stopping 2 of 4 sealers should halt block production.
+nodes:
+  preset: ethereum
+  count: 4
+  ethereum:
+    chain_id: 1337
+    block_time: 5
+
+events:
+  # Let the network stabilize and produce blocks for 30s.
+  # Then stop one sealer — network should still produce blocks (3/4 alive).
+  - at: 30s
+    action: stop
+    target: node-2
+
+  # Stop a second sealer — now only 2/4 are alive.
+  # Clique requires >50%, so block production should halt.
+  - at: 45s
+    action: stop
+    target: node-3
+
+  # Bring one back — 3/4 sealers alive, blocks should resume.
+  - at: 60s
+    action: restart
+    target: node-2
+
+  # Inject 500ms latency on remaining sealers to simulate degraded network.
+  - at: 75s
+    action: latency
+    target: node-1,node-4
+    params:
+      ms: "500"

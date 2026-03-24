@@ -1,0 +1,23 @@
+nodes:
+  image: alpine
+  count: 3
+
+events:
+  # Inject 200ms latency on a single node after 5 seconds.
+  - at: 5s
+    action: latency
+    target: node-1
+    params:
+      ms: "200"
+
+  # After 15 seconds, inject 500ms latency on ALL nodes using a wildcard.
+  - at: 15s
+    action: latency
+    target: node-*
+    params:
+      ms: "500"
+
+  # Stop one node at the end to see mixed state in the report.
+  - at: 25s
+    action: stop
+    target: node-3

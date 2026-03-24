@@ -1,0 +1,88 @@
+package scenario
+
+import (
+	"fmt"
+	"os"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/tijn/nodetester/pkg/types"
+)
+
+// Load reads and validates a scenario YAML file.
+func Load(path string) (*types.Scenario, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading scenario file: %w", err)
+	}
+
+	var s types.Scenario
+	if err := yaml.Unmarshal(data, &s); err != nil {
+		return nil, fmt.Errorf("parsing scenario YAML: %w", err)
+	}
+
+	if err := validate(&s); err != nil {
+		return nil, fmt.Errorf("invalid scenario: %w", err)
+	}
+
+	return &s, nil
+}
+
+// validate checks that the scenario has sane values.
+func validate(s *types.Scenario) error {
+	// If preset is "ethereum", image is optional (defaults to geth image).
+	if s.Nodes.Preset == "ethereum" {
+		if s.Nodes.Ethereum == nil {
+			s.Nodes.Ethereum = &types.EthereumConfig{}
+		}
+	} else if s.Nodes.Preset != "" {
+		return fmt.Errorf("unknown preset %q (supported: ethereum)", s.Nodes.Preset)
+	}
+
+	if s.Nodes.Image == "" && s.Nodes.Preset == "" {
+		return fmt.Errorf("nodes.image is required (or use preset: ethereum)")
+	}
+
+	if s.Nodes.Binary != nil && s.Nodes.Binary.Path == "" {
+		return fmt.Errorf("binary.path is required when binary is specified")
+	}
+
+	if s.Nodes.Count < 1 {
+		return fmt.Errorf("nodes.count must be at least 1")
+	}
+	if s.Nodes.Count > 50 {
+		return fmt.Errorf("nodes.count exceeds maximum of 50")
+	}
+
+	validActions := map[string]bool{
+		"stop":      true,
+		"restart":   true,
+		"latency":   true,
+		"partition": true,
+		"heal":      true,
+	}
+
+	for i, e := range s.Events {
+		if !validActions[e.Action] {
+			return fmt.Errorf("event %d: unknown action %q", i, e.Action)
+		}
+		if e.Target == "" {
+			return fmt.Errorf("event %d: target is required", i)
+		}
+		if e.At.Duration <= 0 {
+			return fmt.Errorf("event %d: 'at' must be a positive duration", i)
+		}
+		if e.Action == "partition" {
+			if e.Params["from"] == "" {
+				return fmt.Errorf("event %d: partition requires 'from' parameter", i)
+			}
+		}
+		if e.Action == "latency" {
+			if e.Params["ms"] == "" {
+				return fmt.Errorf("event %d: latency requires 'ms' parameter", i)
+			}
+		}
+	}
+
+	return nil
+}

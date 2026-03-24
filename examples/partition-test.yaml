@@ -1,0 +1,21 @@
+nodes:
+  image: alpine
+  count: 5
+
+events:
+  # At 5s, split the cluster: nodes 1-2 can't talk to nodes 3-5.
+  - at: 5s
+    action: partition
+    target: node-1,node-2
+    params:
+      from: node-3,node-4,node-5
+
+  # Let the partition hold for 15 seconds, then heal all nodes.
+  - at: 20s
+    action: heal
+    target: node-*
+
+  # After healing, stop one node to create a mixed final state.
+  - at: 25s
+    action: stop
+    target: node-4

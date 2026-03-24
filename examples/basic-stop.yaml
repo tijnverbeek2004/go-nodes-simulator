@@ -1,0 +1,12 @@
+nodes:
+  image: alpine
+  count: 3
+
+events:
+  - at: 5s
+    action: stop
+    target: node-2
+
+  - at: 10s
+    action: restart
+    target: node-2
