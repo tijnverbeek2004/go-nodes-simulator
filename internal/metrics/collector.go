@@ -86,6 +86,14 @@ func (c *Collector) WriteReport(ctx context.Context, path string) error {
 		return fmt.Errorf("writing report file: %w", err)
 	}
 
-	fmt.Printf("[metrics] report written to %s\n", path)
 	return nil
+}
+
+// Events returns a copy of all recorded event records.
+func (c *Collector) Events() []types.EventRecord {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	events := make([]types.EventRecord, len(c.events))
+	copy(events, c.events)
+	return events
 }

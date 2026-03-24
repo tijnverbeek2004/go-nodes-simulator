@@ -11,6 +11,7 @@ Built for testing blockchain networks, consensus protocols, and P2P applications
 - **Ethereum devnet support** — Full Clique PoA devnet setup with automatic peer discovery
 - **Custom binary injection** — Test your own P2P node implementations inside containers
 - **Flexible targeting** — Target specific nodes (`node-2`), multiple nodes (`node-1,node-3`), or all nodes (`node-*`)
+- **Live TUI** — Real-time progress with phased output, event timeline, and formatted results powered by [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lip Gloss](https://github.com/charmbracelet/lipgloss)
 - **JSON reporting** — Structured output of node states and event outcomes
 
 ## Quick Start
@@ -21,12 +22,6 @@ Built for testing blockchain networks, consensus protocols, and P2P applications
 - Go 1.26+ (to build from source)
 
 ### Install
-
-```bash
-go install github.com/tijn/nodetester@latest
-```
-
-Or build from source:
 
 ```bash
 git clone https://github.com/tijnverbeek2004/go-nodes-simulator.git
@@ -47,6 +42,8 @@ nodetester run <scenario.yaml> [-r report.json]   # Execute a chaos scenario
 nodetester status                                   # Show running nodetester containers
 nodetester cleanup                                  # Remove all nodetester containers and networks
 ```
+
+The `run` command displays a live TUI showing each phase as it completes, a real-time event timeline during execution, and a formatted results table at the end.
 
 ## Scenario Format
 
@@ -163,7 +160,8 @@ After execution, a JSON report is written with node states and event outcomes:
 │   ├── devnet/       # Ethereum devnet orchestration
 │   ├── docker/       # Docker client wrapper
 │   ├── metrics/      # Event recording & reporting
-│   └── scenario/     # YAML config parser
+│   ├── scenario/     # YAML config parser
+│   └── ui/           # Bubble Tea TUI and Lip Gloss styles
 ├── pkg/types/        # Shared data types
 └── examples/         # Example scenario files
 ```

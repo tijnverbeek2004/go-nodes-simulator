@@ -39,14 +39,15 @@ func (c *Client) Close() error {
 }
 
 // PullImage pulls the specified image if not already present locally.
-func (c *Client) PullImage(ctx context.Context, imageName string) error {
+// Output is written to the given writer (use io.Discard to suppress).
+func (c *Client) PullImage(ctx context.Context, imageName string, out io.Writer) error {
 	reader, err := c.api.ImagePull(ctx, imageName, image.PullOptions{})
 	if err != nil {
 		return fmt.Errorf("pulling image %s: %w", imageName, err)
 	}
 	defer reader.Close()
 	// Drain the pull output (required to complete the pull).
-	_, _ = io.Copy(os.Stdout, reader)
+	_, _ = io.Copy(out, reader)
 	return nil
 }
 
@@ -88,6 +89,14 @@ func (c *Client) CreateNode(ctx context.Context, name, networkName string, spec 
 		Labels: map[string]string{
 			"nodetester": "true", // label so we can find our containers later
 		},
+	}
+
+	// Images like ethereum/client-go set geth as ENTRYPOINT, so our cmd
+	// gets appended as geth args instead of running as a standalone command.
+	// Override the entrypoint so the keep-alive command runs correctly.
+	if spec.Preset != "" && len(spec.Command) == 0 {
+		containerCfg.Entrypoint = []string{"sh", "-c"}
+		containerCfg.Cmd = []string{"sleep infinity"}
 	}
 
 	// NET_ADMIN is required for tc/netem latency injection.
