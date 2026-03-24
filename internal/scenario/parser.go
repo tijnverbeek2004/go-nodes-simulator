@@ -6,7 +6,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/tijn/nodetester/pkg/types"
+	"github.com/tijnverbeek2004/nodetester/pkg/types"
 )
 
 // Load reads and validates a scenario YAML file.

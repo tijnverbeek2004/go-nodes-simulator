@@ -1,4 +1,4 @@
-module github.com/tijn/nodetester
+module github.com/tijnverbeek2004/nodetester
 
 go 1.26.1
 

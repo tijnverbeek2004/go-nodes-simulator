@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/tijn/nodetester/pkg/types"
+	"github.com/tijnverbeek2004/nodetester/pkg/types"
 )
 
 type phaseStatus int

@@ -12,11 +12,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/tijn/nodetester/internal/chaos"
-	"github.com/tijn/nodetester/internal/devnet"
-	"github.com/tijn/nodetester/internal/docker"
-	"github.com/tijn/nodetester/internal/metrics"
-	"github.com/tijn/nodetester/pkg/types"
+	"github.com/tijnverbeek2004/nodetester/internal/chaos"
+	"github.com/tijnverbeek2004/nodetester/internal/devnet"
+	"github.com/tijnverbeek2004/nodetester/internal/docker"
+	"github.com/tijnverbeek2004/nodetester/internal/metrics"
+	"github.com/tijnverbeek2004/nodetester/pkg/types"
 )
 
 // Run starts the TUI and executes the scenario with live visual feedback.

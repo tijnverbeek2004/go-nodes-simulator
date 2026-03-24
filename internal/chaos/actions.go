@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tijn/nodetester/internal/docker"
+	"github.com/tijnverbeek2004/nodetester/internal/docker"
 )
 
 // Executor runs chaos actions against real containers.

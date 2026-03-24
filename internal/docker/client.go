@@ -15,7 +15,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 
-	ntypes "github.com/tijn/nodetester/pkg/types"
+	ntypes "github.com/tijnverbeek2004/nodetester/pkg/types"
 )
 
 // Client wraps the Docker API client with our domain operations.

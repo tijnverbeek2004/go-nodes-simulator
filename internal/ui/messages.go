@@ -1,6 +1,6 @@
 package ui
 
-import "github.com/tijn/nodetester/pkg/types"
+import "github.com/tijnverbeek2004/nodetester/pkg/types"
 
 // Messages sent from the scenario goroutine to the Bubble Tea model.
 

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tijn/nodetester/internal/docker"
-	"github.com/tijn/nodetester/pkg/types"
+	"github.com/tijnverbeek2004/nodetester/internal/docker"
+	"github.com/tijnverbeek2004/nodetester/pkg/types"
 )
 
 // ethNode tracks per-node state during devnet setup.

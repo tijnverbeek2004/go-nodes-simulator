@@ -3,8 +3,8 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/tijn/nodetester/internal/scenario"
-	"github.com/tijn/nodetester/internal/ui"
+	"github.com/tijnverbeek2004/nodetester/internal/scenario"
+	"github.com/tijnverbeek2004/nodetester/internal/ui"
 )
 
 var reportPath string

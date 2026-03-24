@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tijn/nodetester/internal/docker"
-	"github.com/tijn/nodetester/pkg/types"
+	"github.com/tijnverbeek2004/nodetester/internal/docker"
+	"github.com/tijnverbeek2004/nodetester/pkg/types"
 )
 
 // Collector gathers container status and records chaos events.

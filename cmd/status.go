@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/tijn/nodetester/internal/docker"
-	"github.com/tijn/nodetester/internal/metrics"
+	"github.com/tijnverbeek2004/nodetester/internal/docker"
+	"github.com/tijnverbeek2004/nodetester/internal/metrics"
 )
 
 func init() {
