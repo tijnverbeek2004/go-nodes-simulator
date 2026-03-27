@@ -12,11 +12,12 @@ import (
 	"github.com/tijnverbeek2004/nodetester/pkg/types"
 )
 
-// Collector gathers container status and records chaos events.
+// Collector gathers container status and records chaos events and assertion results.
 type Collector struct {
-	docker *docker.Client
-	mu     sync.Mutex
-	events []types.EventRecord
+	docker     *docker.Client
+	mu         sync.Mutex
+	events     []types.EventRecord
+	assertions []types.AssertionResult
 }
 
 // NewCollector creates a metrics collector.
@@ -41,6 +42,22 @@ func (c *Collector) RecordEvent(action, target string, err error) {
 	c.events = append(c.events, record)
 }
 
+// RecordAssertion logs an assertion result.
+func (c *Collector) RecordAssertion(result types.AssertionResult) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.assertions = append(c.assertions, result)
+}
+
+// Assertions returns a copy of all recorded assertion results.
+func (c *Collector) Assertions() []types.AssertionResult {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	results := make([]types.AssertionResult, len(c.assertions))
+	copy(results, c.assertions)
+	return results
+}
+
 // Snapshot polls Docker and returns current status of all nodetester nodes.
 func (c *Collector) Snapshot(ctx context.Context) ([]types.NodeStatus, error) {
 	nodes, err := c.docker.ListNodes(ctx)
@@ -56,8 +73,9 @@ func (c *Collector) Snapshot(ctx context.Context) ([]types.NodeStatus, error) {
 
 // Report holds the final output of a scenario run.
 type Report struct {
-	Nodes  []types.NodeStatus  `json:"nodes"`
-	Events []types.EventRecord `json:"events"`
+	Nodes      []types.NodeStatus      `json:"nodes"`
+	Events     []types.EventRecord     `json:"events"`
+	Assertions []types.AssertionResult  `json:"assertions,omitempty"`
 }
 
 // WriteReport writes a JSON report to the given file path.
@@ -72,9 +90,13 @@ func (c *Collector) WriteReport(ctx context.Context, path string) error {
 	copy(events, c.events)
 	c.mu.Unlock()
 
+	assertions := make([]types.AssertionResult, len(c.assertions))
+	copy(assertions, c.assertions)
+
 	report := Report{
-		Nodes:  nodes,
-		Events: events,
+		Nodes:      nodes,
+		Events:     events,
+		Assertions: assertions,
 	}
 
 	data, err := json.MarshalIndent(report, "", "  ")

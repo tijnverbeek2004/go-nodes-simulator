@@ -47,6 +47,7 @@ type eventDoneMsg struct {
 type scenarioDoneMsg struct {
 	nodes      []types.NodeStatus
 	events     []types.EventRecord
+	assertions []types.AssertionResult
 	reportPath string
 	err        error
 }

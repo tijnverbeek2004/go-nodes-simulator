@@ -4,8 +4,9 @@ import "time"
 
 // Scenario represents a full test scenario parsed from YAML.
 type Scenario struct {
-	Nodes  NodeSpec `yaml:"nodes"`
-	Events []Event  `yaml:"events"`
+	Nodes      NodeSpec    `yaml:"nodes"`
+	Events     []Event     `yaml:"events"`
+	Assertions []Assertion `yaml:"assertions,omitempty"`
 }
 
 // NodeSpec defines what containers to spin up.
@@ -39,6 +40,25 @@ type Event struct {
 	Action string            `yaml:"action"` // stop, restart, latency, partition
 	Target string            `yaml:"target"` // node-2, node-*, group syntax
 	Params map[string]string `yaml:"params,omitempty"`
+}
+
+// Assertion defines an expected condition checked at a point in time.
+type Assertion struct {
+	At       Duration `yaml:"at"`                 // when to check
+	Type     string   `yaml:"type"`               // "state" or "exec"
+	Target   string   `yaml:"target"`             // node name or glob
+	Expect   string   `yaml:"expect,omitempty"`   // state: "running"/"exited"; exec: "success"/"failure" (default: contextual)
+	Command  string   `yaml:"command,omitempty"`  // exec type: command to run
+	Contains string   `yaml:"contains,omitempty"` // exec type: check output contains this string
+}
+
+// AssertionResult records the outcome of an assertion check.
+type AssertionResult struct {
+	Timestamp time.Time `json:"timestamp"`
+	Type      string    `json:"type"`
+	Target    string    `json:"target"`
+	Success   bool      `json:"success"`
+	Message   string    `json:"message"`
 }
 
 // Duration wraps time.Duration to support YAML unmarshaling from strings like "10s".

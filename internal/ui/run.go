@@ -12,6 +12,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/tijnverbeek2004/nodetester/internal/assert"
 	"github.com/tijnverbeek2004/nodetester/internal/chaos"
 	"github.com/tijnverbeek2004/nodetester/internal/devnet"
 	"github.com/tijnverbeek2004/nodetester/internal/docker"
@@ -133,19 +134,21 @@ func executeScenario(sc *types.Scenario, reportPath string, ch chan<- tea.Msg) {
 		ch <- phaseDoneMsg{name: "Inject binary"}
 	}
 
-	// Execute chaos events
+	// Execute chaos events and assertions
 	collector := metrics.NewCollector(dc)
 	executor := chaos.NewExecutor(dc, networkName)
+	checker := assert.NewChecker(dc, networkName)
 
-	if len(sc.Events) > 0 {
-		ch <- phaseStartMsg{name: "Execute events", info: fmt.Sprintf("0/%d", len(sc.Events))}
+	totalItems := len(sc.Events) + len(sc.Assertions)
+	if totalItems > 0 {
+		ch <- phaseStartMsg{name: "Execute timeline", info: fmt.Sprintf("0/%d", totalItems)}
 
-		if err := executeEvents(ctx, sc, executor, collector, ch); err != nil {
-			ch <- phaseErrorMsg{name: "Execute events", err: err}
+		if err := executeTimeline(ctx, sc, executor, checker, collector, ch); err != nil {
+			ch <- phaseErrorMsg{name: "Execute timeline", err: err}
 			ch <- scenarioDoneMsg{err: err}
 			return
 		}
-		ch <- phaseDoneMsg{name: "Execute events", info: fmt.Sprintf("%d/%d complete", len(sc.Events), len(sc.Events))}
+		ch <- phaseDoneMsg{name: "Execute timeline", info: fmt.Sprintf("%d/%d complete", totalItems, totalItems)}
 	}
 
 	// Write report
@@ -158,10 +161,12 @@ func executeScenario(sc *types.Scenario, reportPath string, ch chan<- tea.Msg) {
 	// Gather final state
 	nodes, _ := collector.Snapshot(ctx)
 	events := collector.Events()
+	assertions := collector.Assertions()
 
 	ch <- scenarioDoneMsg{
 		nodes:      nodes,
 		events:     events,
+		assertions: assertions,
 		reportPath: absReport,
 	}
 }
@@ -192,37 +197,54 @@ func injectBinary(ctx context.Context, dc *docker.Client, nodeNames []string, bi
 	return nil
 }
 
-func executeEvents(ctx context.Context, sc *types.Scenario, exec *chaos.Executor, col *metrics.Collector, ch chan<- tea.Msg) error {
-	type indexedEvent struct {
-		index int
-		at    time.Duration
-	}
-	sorted := make([]indexedEvent, len(sc.Events))
+// timelineItem represents either a chaos event or an assertion in the unified timeline.
+type timelineItem struct {
+	at        time.Duration
+	isAssert  bool
+	eventIdx  int // index into scenario.Events (when isAssert=false)
+	assertIdx int // index into scenario.Assertions (when isAssert=true)
+}
+
+func executeTimeline(ctx context.Context, sc *types.Scenario, exec *chaos.Executor, checker *assert.Checker, col *metrics.Collector, ch chan<- tea.Msg) error {
+	// Build unified timeline
+	var items []timelineItem
 	for i, e := range sc.Events {
-		sorted[i] = indexedEvent{index: i, at: e.At.Duration}
+		items = append(items, timelineItem{at: e.At.Duration, isAssert: false, eventIdx: i})
 	}
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].at < sorted[j].at
+	for i, a := range sc.Assertions {
+		items = append(items, timelineItem{at: a.At.Duration, isAssert: true, assertIdx: i})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].at < items[j].at
 	})
 
-	// Send the full event list to the TUI for display
-	entries := make([]eventEntry, len(sorted))
-	for i, ie := range sorted {
-		event := sc.Events[ie.index]
-		entries[i] = eventEntry{
-			at:     formatDuration(event.At.Duration),
-			action: event.Action,
-			target: event.Target,
+	// Send full timeline to TUI
+	entries := make([]eventEntry, len(items))
+	for i, item := range items {
+		if item.isAssert {
+			a := sc.Assertions[item.assertIdx]
+			action := "assert:" + a.Type
+			entries[i] = eventEntry{
+				at:     formatDuration(a.At.Duration),
+				action: action,
+				target: a.Target,
+			}
+		} else {
+			e := sc.Events[item.eventIdx]
+			entries[i] = eventEntry{
+				at:     formatDuration(e.At.Duration),
+				action: e.Action,
+				target: e.Target,
+			}
 		}
 	}
 	ch <- eventScheduledMsg{events: entries}
 
 	start := time.Now()
+	totalItems := len(items)
 
-	for displayIdx, ie := range sorted {
-		event := sc.Events[ie.index]
-
-		waitDur := event.At.Duration - time.Since(start)
+	for displayIdx, item := range items {
+		waitDur := item.at - time.Since(start)
 		if waitDur > 0 {
 			select {
 			case <-time.After(waitDur):
@@ -232,15 +254,26 @@ func executeEvents(ctx context.Context, sc *types.Scenario, exec *chaos.Executor
 		}
 
 		ch <- eventRunningMsg{index: displayIdx}
-		ch <- phaseUpdateMsg{name: "Execute events", info: fmt.Sprintf("%d/%d", displayIdx+1, len(sc.Events))}
+		ch <- phaseUpdateMsg{name: "Execute timeline", info: fmt.Sprintf("%d/%d", displayIdx+1, totalItems)}
 
-		err := exec.Run(ctx, event.Action, event.Target, event.Params)
-		col.RecordEvent(event.Action, event.Target, err)
-
-		if err != nil {
-			ch <- eventDoneMsg{index: displayIdx, success: false, errMsg: err.Error()}
+		if item.isAssert {
+			a := sc.Assertions[item.assertIdx]
+			result := checker.Check(ctx, a)
+			col.RecordAssertion(result)
+			if result.Success {
+				ch <- eventDoneMsg{index: displayIdx, success: true}
+			} else {
+				ch <- eventDoneMsg{index: displayIdx, success: false, errMsg: result.Message}
+			}
 		} else {
-			ch <- eventDoneMsg{index: displayIdx, success: true}
+			event := sc.Events[item.eventIdx]
+			err := exec.Run(ctx, event.Action, event.Target, event.Params)
+			col.RecordEvent(event.Action, event.Target, err)
+			if err != nil {
+				ch <- eventDoneMsg{index: displayIdx, success: false, errMsg: err.Error()}
+			} else {
+				ch <- eventDoneMsg{index: displayIdx, success: true}
+			}
 		}
 	}
 

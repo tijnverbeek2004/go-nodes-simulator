@@ -1,0 +1,58 @@
+# Chaos scenario with assertions — validates expected outcomes.
+nodes:
+  image: alpine
+  count: 3
+
+events:
+  # All nodes start running. Stop node-2 at 5s.
+  - at: 5s
+    action: stop
+    target: node-2
+
+  # Restart node-2 at 20s.
+  - at: 20s
+    action: restart
+    target: node-2
+
+  # Break DNS on node-3 at 25s.
+  - at: 25s
+    action: dns-fail
+    target: node-3
+
+assertions:
+  # Before any chaos: all nodes should be running.
+  - at: 3s
+    type: state
+    target: node-*
+    expect: running
+
+  # After stopping node-2: it should be exited.
+  - at: 8s
+    type: state
+    target: node-2
+    expect: exited
+
+  # node-1 should still be running.
+  - at: 8s
+    type: state
+    target: node-1
+    expect: running
+
+  # After restart: node-2 should be running again.
+  - at: 23s
+    type: state
+    target: node-2
+    expect: running
+
+  # Exec: check that node-1 can reach node-3 (should pass — DNS still works on node-1).
+  - at: 10s
+    type: exec
+    target: node-1
+    command: "echo hello"
+
+  # After DNS failure on node-3: DNS lookup should fail.
+  - at: 28s
+    type: exec
+    target: node-3
+    command: "nslookup google.com"
+    expect: failure

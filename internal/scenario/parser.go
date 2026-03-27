@@ -116,5 +116,33 @@ func validate(s *types.Scenario) error {
 		}
 	}
 
+	// Validate assertions
+	validAssertTypes := map[string]bool{
+		"state": true,
+		"exec":  true,
+	}
+
+	for i, a := range s.Assertions {
+		if !validAssertTypes[a.Type] {
+			return fmt.Errorf("assertion %d: unknown type %q (supported: state, exec)", i, a.Type)
+		}
+		if a.Target == "" {
+			return fmt.Errorf("assertion %d: target is required", i)
+		}
+		if a.At.Duration <= 0 {
+			return fmt.Errorf("assertion %d: 'at' must be a positive duration", i)
+		}
+		if a.Type == "state" {
+			if a.Expect == "" {
+				return fmt.Errorf("assertion %d: state assertion requires 'expect' (e.g. running, exited)", i)
+			}
+		}
+		if a.Type == "exec" {
+			if a.Command == "" {
+				return fmt.Errorf("assertion %d: exec assertion requires 'command'", i)
+			}
+		}
+	}
+
 	return nil
 }

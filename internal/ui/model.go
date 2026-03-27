@@ -51,6 +51,7 @@ type model struct {
 	// Final report
 	nodes      []types.NodeStatus
 	records    []types.EventRecord
+	assertions []types.AssertionResult
 	reportPath string
 
 	// State
@@ -189,6 +190,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.done = true
 		m.nodes = msg.nodes
 		m.records = msg.events
+		m.assertions = msg.assertions
 		m.reportPath = msg.reportPath
 		m.err = msg.err
 		return m, tea.Quit
@@ -355,6 +357,57 @@ func (m model) renderReport() string {
 
 			b.WriteString("  " + action + target + result + errMsg + "\n")
 		}
+	}
+
+	// Assertions table
+	if len(m.assertions) > 0 {
+		b.WriteString(sectionTitle.Render("\n  Assertions"))
+		b.WriteString("\n")
+
+		b.WriteString(fmt.Sprintf("  %s%s%s%s\n",
+			cellHeaderStyle.Copy().Width(14).Render("TYPE"),
+			cellHeaderStyle.Copy().Width(20).Render("TARGET"),
+			cellHeaderStyle.Copy().Width(10).Render("RESULT"),
+			cellHeaderStyle.Render("MESSAGE"),
+		))
+		b.WriteString("  " + lipgloss.NewStyle().Foreground(darkGray).Render(strings.Repeat("─", 52)) + "\n")
+
+		passed, total := 0, len(m.assertions)
+		for _, a := range m.assertions {
+			aType := colActionStyle.Copy().Width(14).Render(a.Type)
+			target := colTargetStyle.Copy().Width(20).Render(a.Target)
+
+			var result string
+			if a.Success {
+				result = colStatusDone.Copy().Width(10).Render("✓ pass")
+				passed++
+			} else {
+				result = colStatusFail.Copy().Width(10).Render("✗ fail")
+			}
+
+			msg := ""
+			if a.Message != "" {
+				maxLen := 30
+				if !a.Success {
+					msg = lipgloss.NewStyle().Foreground(red).Render(truncate(a.Message, maxLen))
+				} else {
+					msg = lipgloss.NewStyle().Foreground(dim).Render(truncate(a.Message, maxLen))
+				}
+			}
+
+			b.WriteString("  " + aType + target + result + msg + "\n")
+		}
+
+		// Summary line
+		var summary string
+		if passed == total {
+			summary = lipgloss.NewStyle().Bold(true).Foreground(green).Render(
+				fmt.Sprintf("  %d/%d assertions passed", passed, total))
+		} else {
+			summary = lipgloss.NewStyle().Bold(true).Foreground(red).Render(
+				fmt.Sprintf("  %d/%d assertions passed", passed, total))
+		}
+		b.WriteString("\n" + summary + "\n")
 	}
 
 	if m.reportPath != "" {
