@@ -1,0 +1,41 @@
+# CPU/memory stress and DNS failure chaos actions.
+nodes:
+  image: alpine
+  count: 3
+
+events:
+  # Stress CPU on node-1 with 2 workers for 30 seconds.
+  - at: 5s
+    action: stress
+    target: node-1
+    params:
+      cpu: "2"
+      duration: "30s"
+
+  # Stress memory on node-2: 1 vm worker allocating 128MB for 20 seconds.
+  - at: 10s
+    action: stress
+    target: node-2
+    params:
+      vm: "1"
+      vm-bytes: "128M"
+      duration: "20s"
+
+  # Break DNS resolution on node-3.
+  - at: 15s
+    action: dns-fail
+    target: node-3
+
+  # Restore DNS on node-3 after 15 seconds of outage.
+  - at: 30s
+    action: dns-restore
+    target: node-3
+
+  # Combined CPU + IO stress on all nodes.
+  - at: 35s
+    action: stress
+    target: node-*
+    params:
+      cpu: "1"
+      io: "1"
+      duration: "15s"

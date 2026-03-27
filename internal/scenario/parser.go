@@ -55,11 +55,27 @@ func validate(s *types.Scenario) error {
 	}
 
 	validActions := map[string]bool{
-		"stop":      true,
-		"restart":   true,
-		"latency":   true,
-		"partition": true,
-		"heal":      true,
+		"stop":        true,
+		"restart":     true,
+		"latency":     true,
+		"partition":   true,
+		"heal":        true,
+		"loss":        true,
+		"corrupt":     true,
+		"reorder":     true,
+		"duplicate":   true,
+		"stress":      true,
+		"dns-fail":    true,
+		"dns-restore": true,
+		"bandwidth":   true,
+	}
+
+	// Actions that require a 'percent' parameter.
+	percentActions := map[string]bool{
+		"loss":      true,
+		"corrupt":   true,
+		"reorder":   true,
+		"duplicate": true,
 	}
 
 	for i, e := range s.Events {
@@ -80,6 +96,22 @@ func validate(s *types.Scenario) error {
 		if e.Action == "latency" {
 			if e.Params["ms"] == "" {
 				return fmt.Errorf("event %d: latency requires 'ms' parameter", i)
+			}
+		}
+		if percentActions[e.Action] {
+			if e.Params["percent"] == "" {
+				return fmt.Errorf("event %d: %s requires 'percent' parameter", i, e.Action)
+			}
+		}
+		if e.Action == "bandwidth" {
+			if e.Params["rate"] == "" {
+				return fmt.Errorf("event %d: bandwidth requires 'rate' parameter", i)
+			}
+		}
+		if e.Action == "stress" {
+			hasStressor := e.Params["cpu"] != "" || e.Params["vm"] != "" || e.Params["io"] != "" || e.Params["hdd"] != ""
+			if !hasStressor {
+				return fmt.Errorf("event %d: stress requires at least one stressor (cpu, vm, io, hdd)", i)
 			}
 		}
 	}
