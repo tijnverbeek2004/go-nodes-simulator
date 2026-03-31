@@ -36,10 +36,14 @@ type CustomBinary struct {
 
 // Event is a single chaos action scheduled at a point in time.
 type Event struct {
-	At     Duration          `yaml:"at"`     // e.g. "10s", "1m30s"
-	Action string            `yaml:"action"` // stop, restart, latency, partition
-	Target string            `yaml:"target"` // node-2, node-*, group syntax
+	At     Duration          `yaml:"at"`              // e.g. "10s", "1m30s"
+	Action string            `yaml:"action"`          // stop, restart, latency, partition, etc.
+	Target string            `yaml:"target"`          // node-2, node-*, random(2)
 	Params map[string]string `yaml:"params,omitempty"`
+	Every  Duration          `yaml:"every,omitempty"` // repeat interval (e.g. "10s")
+	Count  int               `yaml:"count,omitempty"` // max repeat count (requires every)
+	Until  Duration          `yaml:"until,omitempty"` // repeat until this time from scenario start (requires every)
+	If     string            `yaml:"if,omitempty"`    // condition: "node-1.state == exited"
 }
 
 // Assertion defines an expected condition checked at a point in time.

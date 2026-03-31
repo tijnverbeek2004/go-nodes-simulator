@@ -41,6 +41,7 @@ type eventRunningMsg struct {
 type eventDoneMsg struct {
 	index   int
 	success bool
+	skipped bool
 	errMsg  string
 }
 

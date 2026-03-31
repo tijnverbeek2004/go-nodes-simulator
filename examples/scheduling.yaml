@@ -1,0 +1,65 @@
+# Advanced event scheduling: repeat, parallel, conditional, and random targeting.
+nodes:
+  image: alpine
+  count: 5
+
+events:
+  # Repeat: inject latency every 5s, 3 times total (at 5s, 10s, 15s).
+  - at: 5s
+    action: latency
+    target: node-1
+    params:
+      ms: "100"
+    every: 5s
+    count: 3
+
+  # Parallel: these two events fire at the same time (10s) and run concurrently.
+  - at: 10s
+    action: stop
+    target: node-4
+
+  - at: 10s
+    action: loss
+    target: node-5
+    params:
+      percent: "20"
+
+  # Random targeting: stop 2 random running nodes at 20s.
+  - at: 20s
+    action: stop
+    target: random(2)
+
+  # Conditional: only restart node-4 if it's currently exited.
+  - at: 25s
+    action: restart
+    target: node-4
+    if: "node-4.state == exited"
+
+  # Repeat with until: stress random node every 10s from 30s until 50s.
+  - at: 30s
+    action: stress
+    target: random(1)
+    params:
+      cpu: "1"
+      duration: "8s"
+    every: 10s
+    until: 50s
+
+assertions:
+  # Before chaos: all running.
+  - at: 3s
+    type: state
+    target: node-*
+    expect: running
+
+  # After stopping node-4: should be exited.
+  - at: 12s
+    type: state
+    target: node-4
+    expect: exited
+
+  # After conditional restart: node-4 should be running again.
+  - at: 28s
+    type: state
+    target: node-4
+    expect: running

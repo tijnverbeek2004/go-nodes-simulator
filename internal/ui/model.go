@@ -177,7 +177,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case eventDoneMsg:
 		if msg.index < len(m.events) {
-			if msg.success {
+			if msg.skipped {
+				m.events[msg.index].status = "skipped"
+			} else if msg.success {
 				m.events[msg.index].status = "done"
 			} else {
 				m.events[msg.index].status = "failed"
@@ -261,6 +263,8 @@ func (m model) View() string {
 				status = colStatusDone.Render("✓ done")
 			case "failed":
 				status = colStatusFail.Render("✗ fail")
+			case "skipped":
+				status = colStatusWait.Render("− skip")
 			case "running":
 				status = colStatusRun.Render(m.spinner.View() + " run")
 			default:

@@ -3,12 +3,16 @@ package chaos
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/tijnverbeek2004/nodetester/internal/docker"
 )
+
+var randomPattern = regexp.MustCompile(`^random\((\d+)\)$`)
 
 // Executor runs chaos actions against real containers.
 type Executor struct {
@@ -74,6 +78,29 @@ func (e *Executor) Run(ctx context.Context, action, target string, params map[st
 }
 
 func (e *Executor) resolveTargets(ctx context.Context, pattern string) ([]string, error) {
+	// Handle random(N) targeting — pick N random running nodes
+	if match := randomPattern.FindStringSubmatch(strings.TrimSpace(pattern)); match != nil {
+		n, _ := strconv.Atoi(match[1])
+		nodes, err := e.docker.ListNodes(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing nodes for random selection: %w", err)
+		}
+		var running []string
+		for _, node := range nodes {
+			if node.State == "running" {
+				running = append(running, node.Name)
+			}
+		}
+		if n > len(running) {
+			n = len(running)
+		}
+		if n == 0 {
+			return nil, fmt.Errorf("no running nodes available for random(%d)", n)
+		}
+		rand.Shuffle(len(running), func(i, j int) { running[i], running[j] = running[j], running[i] })
+		return running[:n], nil
+	}
+
 	parts := strings.Split(pattern, ",")
 	var allMatched []string
 

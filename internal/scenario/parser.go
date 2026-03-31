@@ -114,6 +114,22 @@ func validate(s *types.Scenario) error {
 				return fmt.Errorf("event %d: stress requires at least one stressor (cpu, vm, io, hdd)", i)
 			}
 		}
+		// Validate repeat/loop fields
+		if e.Every.Duration > 0 {
+			if e.Count == 0 && e.Until.Duration == 0 {
+				return fmt.Errorf("event %d: 'every' requires 'count' or 'until' to limit repetitions", i)
+			}
+			if e.Count < 0 {
+				return fmt.Errorf("event %d: 'count' must be positive", i)
+			}
+			if e.Until.Duration > 0 && e.Until.Duration <= e.At.Duration {
+				return fmt.Errorf("event %d: 'until' must be after 'at'", i)
+			}
+		} else {
+			if e.Count > 0 || e.Until.Duration > 0 {
+				return fmt.Errorf("event %d: 'count' and 'until' require 'every'", i)
+			}
+		}
 	}
 
 	// Validate assertions

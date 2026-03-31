@@ -7,7 +7,10 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -19,6 +22,8 @@ import (
 	"github.com/tijnverbeek2004/nodetester/internal/metrics"
 	"github.com/tijnverbeek2004/nodetester/pkg/types"
 )
+
+var conditionPattern = regexp.MustCompile(`^(\S+)\.state\s*==\s*(\S+)$`)
 
 // Run starts the TUI and executes the scenario with live visual feedback.
 func Run(scenarioPath string, scenario *types.Scenario, reportPath string) error {
@@ -139,16 +144,15 @@ func executeScenario(sc *types.Scenario, reportPath string, ch chan<- tea.Msg) {
 	executor := chaos.NewExecutor(dc, networkName)
 	checker := assert.NewChecker(dc, networkName)
 
-	totalItems := len(sc.Events) + len(sc.Assertions)
-	if totalItems > 0 {
-		ch <- phaseStartMsg{name: "Execute timeline", info: fmt.Sprintf("0/%d", totalItems)}
+	hasWork := len(sc.Events) > 0 || len(sc.Assertions) > 0
+	if hasWork {
+		ch <- phaseStartMsg{name: "Execute timeline", info: "building..."}
 
-		if err := executeTimeline(ctx, sc, executor, checker, collector, ch); err != nil {
+		if err := executeTimeline(ctx, sc, executor, checker, collector, dc, ch); err != nil {
 			ch <- phaseErrorMsg{name: "Execute timeline", err: err}
 			ch <- scenarioDoneMsg{err: err}
 			return
 		}
-		ch <- phaseDoneMsg{name: "Execute timeline", info: fmt.Sprintf("%d/%d complete", totalItems, totalItems)}
 	}
 
 	// Write report
@@ -201,50 +205,100 @@ func injectBinary(ctx context.Context, dc *docker.Client, nodeNames []string, bi
 type timelineItem struct {
 	at        time.Duration
 	isAssert  bool
-	eventIdx  int // index into scenario.Events (when isAssert=false)
-	assertIdx int // index into scenario.Assertions (when isAssert=true)
+	eventIdx  int    // index into scenario.Events (when isAssert=false)
+	assertIdx int    // index into scenario.Assertions (when isAssert=true)
+	condition string // optional condition to evaluate before execution
 }
 
-func executeTimeline(ctx context.Context, sc *types.Scenario, exec *chaos.Executor, checker *assert.Checker, col *metrics.Collector, ch chan<- tea.Msg) error {
-	// Build unified timeline
+// expandEvents expands repeat/loop events into individual timeline items.
+func expandEvents(events []types.Event) []timelineItem {
 	var items []timelineItem
-	for i, e := range sc.Events {
-		items = append(items, timelineItem{at: e.At.Duration, isAssert: false, eventIdx: i})
+	for i, e := range events {
+		if e.Every.Duration > 0 {
+			// Repeated event: generate instances
+			at := e.At.Duration
+			count := 0
+			for {
+				if e.Count > 0 && count >= e.Count {
+					break
+				}
+				if e.Until.Duration > 0 && at > e.Until.Duration {
+					break
+				}
+				items = append(items, timelineItem{
+					at:        at,
+					isAssert:  false,
+					eventIdx:  i,
+					condition: e.If,
+				})
+				count++
+				at += e.Every.Duration
+			}
+		} else {
+			items = append(items, timelineItem{
+				at:        e.At.Duration,
+				isAssert:  false,
+				eventIdx:  i,
+				condition: e.If,
+			})
+		}
 	}
+	return items
+}
+
+func executeTimeline(ctx context.Context, sc *types.Scenario, exec *chaos.Executor, checker *assert.Checker, col *metrics.Collector, dc *docker.Client, ch chan<- tea.Msg) error {
+	// Expand repeated events and build unified timeline
+	items := expandEvents(sc.Events)
 	for i, a := range sc.Assertions {
 		items = append(items, timelineItem{at: a.At.Duration, isAssert: true, assertIdx: i})
 	}
-	sort.Slice(items, func(i, j int) bool {
+	sort.SliceStable(items, func(i, j int) bool {
 		return items[i].at < items[j].at
 	})
 
+	totalItems := len(items)
+
 	// Send full timeline to TUI
-	entries := make([]eventEntry, len(items))
+	entries := make([]eventEntry, totalItems)
 	for i, item := range items {
 		if item.isAssert {
 			a := sc.Assertions[item.assertIdx]
-			action := "assert:" + a.Type
 			entries[i] = eventEntry{
 				at:     formatDuration(a.At.Duration),
-				action: action,
+				action: "assert:" + a.Type,
 				target: a.Target,
 			}
 		} else {
 			e := sc.Events[item.eventIdx]
+			action := e.Action
+			if item.condition != "" {
+				action += " [if]"
+			}
 			entries[i] = eventEntry{
-				at:     formatDuration(e.At.Duration),
-				action: e.Action,
+				at:     formatDuration(item.at),
+				action: action,
 				target: e.Target,
 			}
 		}
 	}
 	ch <- eventScheduledMsg{events: entries}
+	ch <- phaseUpdateMsg{name: "Execute timeline", info: fmt.Sprintf("0/%d", totalItems)}
 
 	start := time.Now()
-	totalItems := len(items)
 
-	for displayIdx, item := range items {
-		waitDur := item.at - time.Since(start)
+	// Group items by time for parallel execution
+	i := 0
+	for i < len(items) {
+		// Collect all items at the same time
+		groupStart := i
+		groupAt := items[i].at
+		for i < len(items) && items[i].at == groupAt {
+			i++
+		}
+		group := items[groupStart:i]
+
+		// Wait until the scheduled time
+		waitDur := groupAt - time.Since(start)
 		if waitDur > 0 {
 			select {
 			case <-time.After(waitDur):
@@ -253,31 +307,97 @@ func executeTimeline(ctx context.Context, sc *types.Scenario, exec *chaos.Execut
 			}
 		}
 
-		ch <- eventRunningMsg{index: displayIdx}
-		ch <- phaseUpdateMsg{name: "Execute timeline", info: fmt.Sprintf("%d/%d", displayIdx+1, totalItems)}
-
-		if item.isAssert {
-			a := sc.Assertions[item.assertIdx]
-			result := checker.Check(ctx, a)
-			col.RecordAssertion(result)
-			if result.Success {
-				ch <- eventDoneMsg{index: displayIdx, success: true}
-			} else {
-				ch <- eventDoneMsg{index: displayIdx, success: false, errMsg: result.Message}
-			}
+		if len(group) == 1 {
+			// Single item — run directly
+			displayIdx := groupStart
+			executeOneItem(ctx, sc, group[0], displayIdx, totalItems, exec, checker, col, dc, ch)
 		} else {
-			event := sc.Events[item.eventIdx]
-			err := exec.Run(ctx, event.Action, event.Target, event.Params)
-			col.RecordEvent(event.Action, event.Target, err)
-			if err != nil {
-				ch <- eventDoneMsg{index: displayIdx, success: false, errMsg: err.Error()}
-			} else {
-				ch <- eventDoneMsg{index: displayIdx, success: true}
+			// Multiple items at same time — run in parallel
+			var wg sync.WaitGroup
+			for gi, item := range group {
+				displayIdx := groupStart + gi
+				ch <- eventRunningMsg{index: displayIdx}
+				wg.Add(1)
+				go func(item timelineItem, displayIdx int) {
+					defer wg.Done()
+					runItem(ctx, sc, item, displayIdx, exec, checker, col, dc, ch)
+				}(item, displayIdx)
 			}
+			wg.Wait()
+			ch <- phaseUpdateMsg{name: "Execute timeline", info: fmt.Sprintf("%d/%d", groupStart+len(group), totalItems)}
 		}
 	}
 
+	ch <- phaseDoneMsg{name: "Execute timeline", info: fmt.Sprintf("%d/%d complete", totalItems, totalItems)}
 	return nil
+}
+
+// executeOneItem handles a single timeline item (with running/done messages and phase update).
+func executeOneItem(ctx context.Context, sc *types.Scenario, item timelineItem, displayIdx, totalItems int, exec *chaos.Executor, checker *assert.Checker, col *metrics.Collector, dc *docker.Client, ch chan<- tea.Msg) {
+	ch <- eventRunningMsg{index: displayIdx}
+	ch <- phaseUpdateMsg{name: "Execute timeline", info: fmt.Sprintf("%d/%d", displayIdx+1, totalItems)}
+	runItem(ctx, sc, item, displayIdx, exec, checker, col, dc, ch)
+}
+
+// runItem executes a single timeline item (event or assertion) and sends the done message.
+func runItem(ctx context.Context, sc *types.Scenario, item timelineItem, displayIdx int, exec *chaos.Executor, checker *assert.Checker, col *metrics.Collector, dc *docker.Client, ch chan<- tea.Msg) {
+	if item.isAssert {
+		a := sc.Assertions[item.assertIdx]
+		result := checker.Check(ctx, a)
+		col.RecordAssertion(result)
+		if result.Success {
+			ch <- eventDoneMsg{index: displayIdx, success: true}
+		} else {
+			ch <- eventDoneMsg{index: displayIdx, success: false, errMsg: result.Message}
+		}
+		return
+	}
+
+	// Check condition before running event
+	event := sc.Events[item.eventIdx]
+	if item.condition != "" {
+		met, err := evaluateCondition(ctx, item.condition, dc)
+		if err != nil {
+			ch <- eventDoneMsg{index: displayIdx, success: false, errMsg: fmt.Sprintf("condition error: %s", err)}
+			return
+		}
+		if !met {
+			col.RecordEvent(event.Action, event.Target, nil)
+			ch <- eventDoneMsg{index: displayIdx, skipped: true}
+			return
+		}
+	}
+
+	err := exec.Run(ctx, event.Action, event.Target, event.Params)
+	col.RecordEvent(event.Action, event.Target, err)
+	if err != nil {
+		ch <- eventDoneMsg{index: displayIdx, success: false, errMsg: err.Error()}
+	} else {
+		ch <- eventDoneMsg{index: displayIdx, success: true}
+	}
+}
+
+// evaluateCondition checks a simple condition string like "node-1.state == exited".
+func evaluateCondition(ctx context.Context, condition string, dc *docker.Client) (bool, error) {
+	condition = strings.TrimSpace(condition)
+	match := conditionPattern.FindStringSubmatch(condition)
+	if match == nil {
+		return false, fmt.Errorf("unsupported condition syntax: %q (use: node-X.state == running|exited)", condition)
+	}
+
+	nodeName := match[1]
+	expectedState := match[2]
+
+	nodes, err := dc.ListNodes(ctx)
+	if err != nil {
+		return false, fmt.Errorf("listing nodes: %w", err)
+	}
+	for _, n := range nodes {
+		if n.Name == nodeName {
+			return n.State == expectedState, nil
+		}
+	}
+	return false, fmt.Errorf("node %q not found", nodeName)
 }
 
 func formatDuration(d time.Duration) string {
