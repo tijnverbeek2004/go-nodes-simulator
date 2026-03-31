@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -51,13 +52,22 @@ func (c *Client) PullImage(ctx context.Context, imageName string, out io.Writer)
 	return nil
 }
 
-// CreateNetwork creates a bridge network for the scenario.
+// CreateNetwork creates a bridge network for the scenario, reusing it if it already exists.
 // Returns the network ID.
 func (c *Client) CreateNetwork(ctx context.Context, name string) (string, error) {
 	resp, err := c.api.NetworkCreate(ctx, name, network.CreateOptions{
 		Driver: "bridge",
 	})
 	if err != nil {
+		// If network already exists, find and return its ID
+		nets, listErr := c.api.NetworkList(ctx, network.ListOptions{})
+		if listErr == nil {
+			for _, n := range nets {
+				if n.Name == name {
+					return n.ID, nil
+				}
+			}
+		}
 		return "", fmt.Errorf("creating network %s: %w", name, err)
 	}
 	return resp.ID, nil
@@ -232,6 +242,66 @@ func (c *Client) GetContainerIP(ctx context.Context, containerName, networkName 
 	}
 
 	return ep.IPAddress, nil
+}
+
+// ContainerStats returns a one-shot snapshot of CPU, memory, and network I/O for a container.
+func (c *Client) ContainerStats(ctx context.Context, containerName string) (*ntypes.ContainerStats, error) {
+	resp, err := c.api.ContainerStatsOneShot(ctx, containerName)
+	if err != nil {
+		return nil, fmt.Errorf("getting stats for %s: %w", containerName, err)
+	}
+	defer resp.Body.Close()
+
+	var raw struct {
+		CPUStats struct {
+			CPUUsage struct {
+				TotalUsage uint64 `json:"total_usage"`
+			} `json:"cpu_usage"`
+			SystemCPUUsage uint64 `json:"system_cpu_usage"`
+			OnlineCPUs     int    `json:"online_cpus"`
+		} `json:"cpu_stats"`
+		PreCPUStats struct {
+			CPUUsage struct {
+				TotalUsage uint64 `json:"total_usage"`
+			} `json:"cpu_usage"`
+			SystemCPUUsage uint64 `json:"system_cpu_usage"`
+		} `json:"precpu_stats"`
+		MemoryStats struct {
+			Usage uint64 `json:"usage"`
+			Limit uint64 `json:"limit"`
+		} `json:"memory_stats"`
+		Networks map[string]struct {
+			RxBytes uint64 `json:"rx_bytes"`
+			TxBytes uint64 `json:"tx_bytes"`
+		} `json:"networks"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("decoding stats for %s: %w", containerName, err)
+	}
+
+	// Calculate CPU percentage
+	cpuDelta := float64(raw.CPUStats.CPUUsage.TotalUsage - raw.PreCPUStats.CPUUsage.TotalUsage)
+	sysDelta := float64(raw.CPUStats.SystemCPUUsage - raw.PreCPUStats.SystemCPUUsage)
+	cpuPct := 0.0
+	if sysDelta > 0 && raw.CPUStats.OnlineCPUs > 0 {
+		cpuPct = (cpuDelta / sysDelta) * float64(raw.CPUStats.OnlineCPUs) * 100.0
+	}
+
+	// Sum network I/O across all interfaces
+	var rxBytes, txBytes uint64
+	for _, net := range raw.Networks {
+		rxBytes += net.RxBytes
+		txBytes += net.TxBytes
+	}
+
+	return &ntypes.ContainerStats{
+		CPUPercent: cpuPct,
+		MemUsage:   raw.MemoryStats.Usage,
+		MemLimit:   raw.MemoryStats.Limit,
+		NetRx:      rxBytes,
+		NetTx:      txBytes,
+	}, nil
 }
 
 // Exec runs a command inside a running container and returns the combined output.

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -48,10 +49,14 @@ type model struct {
 	// Events timeline
 	events []eventDisplay
 
+	// Live stats
+	liveStats map[string]types.ContainerStats
+
 	// Final report
 	nodes      []types.NodeStatus
 	records    []types.EventRecord
 	assertions []types.AssertionResult
+	stats      []types.StatsSnapshot
 	reportPath string
 
 	// State
@@ -188,11 +193,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, waitForMsg(m.ch)
 
+	case statsUpdateMsg:
+		m.liveStats = msg.stats
+		return m, waitForMsg(m.ch)
+
 	case scenarioDoneMsg:
 		m.done = true
 		m.nodes = msg.nodes
 		m.records = msg.events
 		m.assertions = msg.assertions
+		m.stats = msg.stats
 		m.reportPath = msg.reportPath
 		m.err = msg.err
 		return m, tea.Quit
@@ -272,6 +282,40 @@ func (m model) View() string {
 			}
 
 			b.WriteString("  " + time + action + target + status + "\n")
+		}
+	}
+
+	// Live stats (shown while scenario is running)
+	if !m.done && len(m.liveStats) > 0 {
+		b.WriteString("\n")
+		b.WriteString(timelineHeaderStyle.Render("  Stats"))
+		b.WriteString("\n")
+
+		hdr := fmt.Sprintf("  %s%s%s%s%s",
+			lipgloss.NewStyle().Width(12).Bold(true).Foreground(dim).Render("NODE"),
+			lipgloss.NewStyle().Width(10).Bold(true).Foreground(dim).Render("CPU %"),
+			lipgloss.NewStyle().Width(14).Bold(true).Foreground(dim).Render("MEM"),
+			lipgloss.NewStyle().Width(12).Bold(true).Foreground(dim).Render("NET RX"),
+			lipgloss.NewStyle().Bold(true).Foreground(dim).Render("NET TX"),
+		)
+		b.WriteString(hdr + "\n")
+		b.WriteString("  " + lipgloss.NewStyle().Foreground(darkGray).Render(strings.Repeat("─", 52)) + "\n")
+
+		// Sort node names for stable output
+		names := make([]string, 0, len(m.liveStats))
+		for name := range m.liveStats {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+
+		for _, name := range names {
+			s := m.liveStats[name]
+			nodeName := lipgloss.NewStyle().Width(12).Foreground(white).Render(name)
+			cpu := lipgloss.NewStyle().Width(10).Foreground(cyan).Render(fmt.Sprintf("%.1f", s.CPUPercent))
+			mem := lipgloss.NewStyle().Width(14).Foreground(cyan).Render(formatBytes(s.MemUsage))
+			rx := lipgloss.NewStyle().Width(12).Foreground(dim).Render(formatBytes(s.NetRx))
+			tx := lipgloss.NewStyle().Foreground(dim).Render(formatBytes(s.NetTx))
+			b.WriteString("  " + nodeName + cpu + mem + rx + tx + "\n")
 		}
 	}
 
@@ -427,4 +471,22 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max-3] + "..."
+}
+
+func formatBytes(b uint64) string {
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+	)
+	switch {
+	case b >= GB:
+		return fmt.Sprintf("%.1f GB", float64(b)/float64(GB))
+	case b >= MB:
+		return fmt.Sprintf("%.1f MB", float64(b)/float64(MB))
+	case b >= KB:
+		return fmt.Sprintf("%.1f KB", float64(b)/float64(KB))
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
 }

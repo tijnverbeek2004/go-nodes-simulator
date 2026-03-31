@@ -76,10 +76,16 @@ type Report struct {
 	Nodes      []types.NodeStatus      `json:"nodes"`
 	Events     []types.EventRecord     `json:"events"`
 	Assertions []types.AssertionResult  `json:"assertions,omitempty"`
+	Stats      []types.StatsSnapshot   `json:"stats,omitempty"`
 }
 
-// WriteReport writes a JSON report to the given file path.
+// WriteReport writes a JSON report to the given file path (without stats).
 func (c *Collector) WriteReport(ctx context.Context, path string) error {
+	return c.WriteReportWithStats(ctx, path, nil)
+}
+
+// WriteReportWithStats writes a JSON report including resource usage history.
+func (c *Collector) WriteReportWithStats(ctx context.Context, path string, stats []types.StatsSnapshot) error {
 	nodes, err := c.Snapshot(ctx)
 	if err != nil {
 		return fmt.Errorf("collecting final snapshot: %w", err)
@@ -97,6 +103,7 @@ func (c *Collector) WriteReport(ctx context.Context, path string) error {
 		Nodes:      nodes,
 		Events:     events,
 		Assertions: assertions,
+		Stats:      stats,
 	}
 
 	data, err := json.MarshalIndent(report, "", "  ")

@@ -92,6 +92,21 @@ type NodeStatus struct {
 	LastChecked  time.Time `json:"last_checked"`
 }
 
+// ContainerStats holds a point-in-time resource snapshot for a container.
+type ContainerStats struct {
+	CPUPercent float64 `json:"cpu_percent"`
+	MemUsage   uint64  `json:"mem_usage_bytes"`
+	MemLimit   uint64  `json:"mem_limit_bytes"`
+	NetRx      uint64  `json:"net_rx_bytes"`
+	NetTx      uint64  `json:"net_tx_bytes"`
+}
+
+// StatsSnapshot holds stats for all nodes at a point in time.
+type StatsSnapshot struct {
+	Timestamp time.Time                `json:"timestamp"`
+	Nodes     map[string]ContainerStats `json:"nodes"`
+}
+
 // EventRecord logs a chaos event that was executed.
 type EventRecord struct {
 	Timestamp time.Time `json:"timestamp"`

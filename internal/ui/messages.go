@@ -45,10 +45,15 @@ type eventDoneMsg struct {
 	errMsg  string
 }
 
+type statsUpdateMsg struct {
+	stats map[string]types.ContainerStats
+}
+
 type scenarioDoneMsg struct {
 	nodes      []types.NodeStatus
 	events     []types.EventRecord
 	assertions []types.AssertionResult
+	stats      []types.StatsSnapshot
 	reportPath string
 	err        error
 }

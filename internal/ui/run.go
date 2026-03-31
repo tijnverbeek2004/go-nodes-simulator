@@ -60,6 +60,9 @@ func executeScenario(sc *types.Scenario, reportPath string, ch chan<- tea.Msg) {
 	}
 	defer dc.Close()
 
+	// Clean up any leftover containers and network from previous runs
+	cleanup(ctx, dc)
+
 	// Resolve image
 	imageName := sc.Nodes.Image
 	if sc.Nodes.Preset == "ethereum" && imageName == "" {
@@ -139,6 +142,14 @@ func executeScenario(sc *types.Scenario, reportPath string, ch chan<- tea.Msg) {
 		ch <- phaseDoneMsg{name: "Inject binary"}
 	}
 
+	// Start stats collection in background
+	statsCtx, statsCancel := context.WithCancel(ctx)
+	defer statsCancel()
+	statsCollector := metrics.NewStatsCollector(dc, nodeNames, 2*time.Second, func(stats map[string]types.ContainerStats) {
+		ch <- statsUpdateMsg{stats: stats}
+	})
+	statsCollector.Start(statsCtx)
+
 	// Execute chaos events and assertions
 	collector := metrics.NewCollector(dc)
 	executor := chaos.NewExecutor(dc, networkName)
@@ -155,9 +166,12 @@ func executeScenario(sc *types.Scenario, reportPath string, ch chan<- tea.Msg) {
 		}
 	}
 
+	// Stop stats collection
+	statsCancel()
+
 	// Write report
 	absReport, _ := filepath.Abs(reportPath)
-	if err := collector.WriteReport(ctx, absReport); err != nil {
+	if err := collector.WriteReportWithStats(ctx, absReport, statsCollector.History()); err != nil {
 		ch <- scenarioDoneMsg{err: err}
 		return
 	}
@@ -167,12 +181,28 @@ func executeScenario(sc *types.Scenario, reportPath string, ch chan<- tea.Msg) {
 	events := collector.Events()
 	assertions := collector.Assertions()
 
+	// Clean up containers and network
+	cleanup(ctx, dc)
+
 	ch <- scenarioDoneMsg{
 		nodes:      nodes,
 		events:     events,
 		assertions: assertions,
+		stats:      statsCollector.History(),
 		reportPath: absReport,
 	}
+}
+
+// cleanup removes all nodetester containers and the network.
+func cleanup(ctx context.Context, dc *docker.Client) {
+	nodes, err := dc.ListNodes(ctx)
+	if err != nil {
+		return
+	}
+	for _, n := range nodes {
+		_ = dc.RemoveNode(ctx, n.Name)
+	}
+	_ = dc.RemoveNetwork(ctx, "nodetester-net")
 }
 
 func injectBinary(ctx context.Context, dc *docker.Client, nodeNames []string, bin *types.CustomBinary) error {
