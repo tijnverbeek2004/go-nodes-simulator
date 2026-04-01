@@ -1,0 +1,41 @@
+# Solana test-validator: 1 validator + 2 RPC watchers.
+# Tests validator resilience under network chaos.
+nodes:
+  preset: solana
+  count: 3
+  solana:
+    slots_per_epoch: 50
+
+events:
+  # Stop an RPC watcher
+  - at: 15s
+    action: stop
+    target: node-2
+
+  # Add packet loss to the validator
+  - at: 25s
+    action: loss
+    target: node-1
+    params:
+      percent: "10"
+
+  # Restart the watcher
+  - at: 35s
+    action: restart
+    target: node-2
+
+assertions:
+  - at: 10s
+    type: state
+    target: node-*
+    expect: running
+
+  - at: 20s
+    type: state
+    target: node-2
+    expect: exited
+
+  - at: 40s
+    type: state
+    target: node-2
+    expect: running

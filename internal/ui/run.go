@@ -65,8 +65,8 @@ func executeScenario(sc *types.Scenario, reportPath string, ch chan<- tea.Msg) {
 
 	// Resolve image
 	imageName := sc.Nodes.Image
-	if sc.Nodes.Preset == "ethereum" && imageName == "" {
-		imageName = devnet.DefaultEthImage()
+	if imageName == "" {
+		imageName = devnet.DefaultImageForPreset(sc.Nodes.Preset)
 		sc.Nodes.Image = imageName
 	}
 
@@ -108,27 +108,27 @@ func executeScenario(sc *types.Scenario, reportPath string, ch chan<- tea.Msg) {
 	ch <- phaseDoneMsg{name: "Spin up nodes", info: fmt.Sprintf("%d containers", sc.Nodes.Count)}
 
 	// Preset setup
-	if sc.Nodes.Preset == "ethereum" {
-		ch <- phaseStartMsg{name: "Ethereum devnet", info: "initializing..."}
-		eth := devnet.NewEthDevnet(dc, networkName, *sc.Nodes.Ethereum)
+	if sc.Nodes.Preset != "" {
+		phaseName := sc.Nodes.Preset + " devnet"
+		ch <- phaseStartMsg{name: phaseName, info: "initializing..."}
 
 		statusFn := func(msg string) {
-			ch <- phaseUpdateMsg{name: "Ethereum devnet", info: msg}
+			ch <- phaseUpdateMsg{name: phaseName, info: msg}
 		}
 
-		if err := eth.Setup(ctx, nodeNames, statusFn); err != nil {
-			ch <- phaseErrorMsg{name: "Ethereum devnet", err: err}
-			ch <- scenarioDoneMsg{err: fmt.Errorf("ethereum devnet setup: %w", err)}
+		if err := devnet.SetupPreset(ctx, sc, dc, networkName, nodeNames, statusFn); err != nil {
+			ch <- phaseErrorMsg{name: phaseName, err: err}
+			ch <- scenarioDoneMsg{err: fmt.Errorf("%s setup: %w", sc.Nodes.Preset, err)}
 			return
 		}
 
-		ch <- phaseUpdateMsg{name: "Ethereum devnet", info: "waiting for blocks..."}
-		if err := eth.WaitForBlocks(ctx); err != nil {
-			ch <- phaseErrorMsg{name: "Ethereum devnet", err: err}
-			ch <- scenarioDoneMsg{err: fmt.Errorf("ethereum devnet: %w", err)}
+		ch <- phaseUpdateMsg{name: phaseName, info: "waiting for blocks..."}
+		if err := devnet.WaitForBlocks(ctx, sc.Nodes.Preset, dc, networkName, nodeNames, sc); err != nil {
+			ch <- phaseErrorMsg{name: phaseName, err: err}
+			ch <- scenarioDoneMsg{err: fmt.Errorf("%s: %w", sc.Nodes.Preset, err)}
 			return
 		}
-		ch <- phaseDoneMsg{name: "Ethereum devnet", info: fmt.Sprintf("%d sealers ready", sc.Nodes.Count)}
+		ch <- phaseDoneMsg{name: phaseName, info: fmt.Sprintf("%d nodes ready", sc.Nodes.Count)}
 	}
 
 	// Custom binary injection

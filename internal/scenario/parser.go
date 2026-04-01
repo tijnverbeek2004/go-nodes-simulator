@@ -30,17 +30,40 @@ func Load(path string) (*types.Scenario, error) {
 
 // validate checks that the scenario has sane values.
 func validate(s *types.Scenario) error {
-	// If preset is "ethereum", image is optional (defaults to geth image).
-	if s.Nodes.Preset == "ethereum" {
+	// Validate preset and set defaults.
+	validPresets := map[string]bool{
+		"ethereum": true,
+		"bitcoin":  true,
+		"cosmos":   true,
+		"solana":   true,
+	}
+	if s.Nodes.Preset != "" {
+		if !validPresets[s.Nodes.Preset] {
+			return fmt.Errorf("unknown preset %q (supported: ethereum, bitcoin, cosmos, solana)", s.Nodes.Preset)
+		}
+	}
+
+	switch s.Nodes.Preset {
+	case "ethereum":
 		if s.Nodes.Ethereum == nil {
 			s.Nodes.Ethereum = &types.EthereumConfig{}
 		}
-	} else if s.Nodes.Preset != "" {
-		return fmt.Errorf("unknown preset %q (supported: ethereum)", s.Nodes.Preset)
+	case "bitcoin":
+		if s.Nodes.Bitcoin == nil {
+			s.Nodes.Bitcoin = &types.BitcoinConfig{}
+		}
+	case "cosmos":
+		if s.Nodes.Cosmos == nil {
+			s.Nodes.Cosmos = &types.CosmosConfig{}
+		}
+	case "solana":
+		if s.Nodes.Solana == nil {
+			s.Nodes.Solana = &types.SolanaConfig{}
+		}
 	}
 
 	if s.Nodes.Image == "" && s.Nodes.Preset == "" {
-		return fmt.Errorf("nodes.image is required (or use preset: ethereum)")
+		return fmt.Errorf("nodes.image is required (or use a preset: ethereum, bitcoin, cosmos, solana)")
 	}
 
 	if s.Nodes.Binary != nil && s.Nodes.Binary.Path == "" {

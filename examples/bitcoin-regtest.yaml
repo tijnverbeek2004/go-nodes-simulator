@@ -1,0 +1,41 @@
+# Bitcoin regtest devnet: 3 bitcoind nodes in regtest mode.
+# Tests block production and peer connectivity under chaos.
+nodes:
+  preset: bitcoin
+  count: 3
+  bitcoin:
+    block_time: 5
+
+events:
+  # Stop one node — others should keep running
+  - at: 30s
+    action: stop
+    target: node-2
+
+  # Restart it
+  - at: 45s
+    action: restart
+    target: node-2
+
+  # Add latency to the miner
+  - at: 55s
+    action: latency
+    target: node-1
+    params:
+      ms: "300"
+
+assertions:
+  - at: 20s
+    type: state
+    target: node-*
+    expect: running
+
+  - at: 35s
+    type: state
+    target: node-2
+    expect: exited
+
+  - at: 50s
+    type: state
+    target: node-2
+    expect: running

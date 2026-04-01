@@ -1,0 +1,42 @@
+# Cosmos SDK localnet: 3 simd nodes running a single-validator chain.
+# Tests chain liveness under node failures.
+nodes:
+  preset: cosmos
+  count: 3
+  cosmos:
+    chain_id: "nodetester-1"
+    block_time: "1s"
+
+events:
+  # Stop a non-validator peer
+  - at: 20s
+    action: stop
+    target: node-3
+
+  # Add network latency between remaining nodes
+  - at: 30s
+    action: latency
+    target: node-2
+    params:
+      ms: "500"
+
+  # Restart the stopped node
+  - at: 40s
+    action: restart
+    target: node-3
+
+assertions:
+  - at: 15s
+    type: state
+    target: node-*
+    expect: running
+
+  - at: 25s
+    type: state
+    target: node-3
+    expect: exited
+
+  - at: 50s
+    type: state
+    target: node-3
+    expect: running

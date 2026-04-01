@@ -16,8 +16,11 @@ type NodeSpec struct {
 	Network  string            `yaml:"network,omitempty"` // auto-generated if empty
 	Env      map[string]string `yaml:"env,omitempty"`
 	Command  []string          `yaml:"command,omitempty"`
-	Preset   string            `yaml:"preset,omitempty"`   // "ethereum" for geth devnet, empty for generic
-	Ethereum *EthereumConfig   `yaml:"ethereum,omitempty"` // required when preset is "ethereum"
+	Preset   string            `yaml:"preset,omitempty"`   // "ethereum", "bitcoin", "cosmos", "solana", or empty
+	Ethereum *EthereumConfig   `yaml:"ethereum,omitempty"` // settings for preset: ethereum
+	Bitcoin  *BitcoinConfig    `yaml:"bitcoin,omitempty"`  // settings for preset: bitcoin
+	Cosmos   *CosmosConfig     `yaml:"cosmos,omitempty"`   // settings for preset: cosmos
+	Solana   *SolanaConfig     `yaml:"solana,omitempty"`   // settings for preset: solana
 	Binary   *CustomBinary     `yaml:"binary,omitempty"`   // inject a custom P2P binary into containers
 }
 
@@ -25,6 +28,22 @@ type NodeSpec struct {
 type EthereumConfig struct {
 	ChainID   int `yaml:"chain_id"`   // network/chain ID (default: 1337)
 	BlockTime int `yaml:"block_time"` // seconds between PoA blocks (default: 5)
+}
+
+// BitcoinConfig holds settings for a Bitcoin regtest network.
+type BitcoinConfig struct {
+	BlockTime int `yaml:"block_time"` // seconds between generated blocks (default: 10)
+}
+
+// CosmosConfig holds settings for a Cosmos SDK localnet.
+type CosmosConfig struct {
+	ChainID   string `yaml:"chain_id"`   // chain ID (default: "nodetester-1")
+	BlockTime string `yaml:"block_time"` // tendermint block time (default: "1s")
+}
+
+// SolanaConfig holds settings for a Solana test validator cluster.
+type SolanaConfig struct {
+	SlotsPerEpoch int `yaml:"slots_per_epoch"` // slots per epoch (default: 50)
 }
 
 // CustomBinary specifies a local binary to copy into each container and run.

@@ -42,8 +42,8 @@ func Run(scenarioPath string, sc *types.Scenario, reportPath string) error {
 
 	// Resolve image
 	imageName := sc.Nodes.Image
-	if sc.Nodes.Preset == "ethereum" && imageName == "" {
-		imageName = devnet.DefaultEthImage()
+	if imageName == "" {
+		imageName = devnet.DefaultImageForPreset(sc.Nodes.Preset)
 		sc.Nodes.Image = imageName
 	}
 
@@ -78,19 +78,18 @@ func Run(scenarioPath string, sc *types.Scenario, reportPath string) error {
 	logDone("nodes", "%d containers running", sc.Nodes.Count)
 
 	// Preset setup
-	if sc.Nodes.Preset == "ethereum" {
-		logPhase("ethereum", "Setting up Clique PoA devnet")
-		eth := devnet.NewEthDevnet(dc, networkName, *sc.Nodes.Ethereum)
+	if sc.Nodes.Preset != "" {
+		logPhase(sc.Nodes.Preset, "Setting up %s devnet", sc.Nodes.Preset)
 		statusFn := func(msg string) {
-			logInfo("ethereum", "%s", msg)
+			logInfo(sc.Nodes.Preset, "%s", msg)
 		}
-		if err := eth.Setup(ctx, nodeNames, statusFn); err != nil {
-			return fmt.Errorf("ethereum devnet setup: %w", err)
+		if err := devnet.SetupPreset(ctx, sc, dc, networkName, nodeNames, statusFn); err != nil {
+			return fmt.Errorf("%s devnet setup: %w", sc.Nodes.Preset, err)
 		}
-		if err := eth.WaitForBlocks(ctx); err != nil {
-			return fmt.Errorf("ethereum devnet: %w", err)
+		if err := devnet.WaitForBlocks(ctx, sc.Nodes.Preset, dc, networkName, nodeNames, sc); err != nil {
+			return fmt.Errorf("%s devnet: %w", sc.Nodes.Preset, err)
 		}
-		logDone("ethereum", "%d sealers ready", sc.Nodes.Count)
+		logDone(sc.Nodes.Preset, "%d nodes ready", sc.Nodes.Count)
 	}
 
 	// Custom binary injection
