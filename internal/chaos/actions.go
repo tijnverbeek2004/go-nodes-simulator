@@ -33,6 +33,9 @@ func (e *Executor) Run(ctx context.Context, action, target string, params map[st
 	if action == "heal" {
 		return e.heal(ctx, target)
 	}
+	if action == "http" {
+		return e.httpRequest(ctx, target, params)
+	}
 
 	targets, err := e.resolveTargets(ctx, target)
 	if err != nil {
@@ -335,6 +338,129 @@ func (e *Executor) bandwidth(ctx context.Context, target string, params map[stri
 		return fmt.Errorf("applying bandwidth limit: %w", err)
 	}
 	return nil
+}
+
+func (e *Executor) httpRequest(ctx context.Context, target string, params map[string]string) error {
+	// Runs HTTP requests from inside a container on the Docker network.
+	// This works on all platforms (Windows/Mac/Linux) since the request
+	// stays within the Docker bridge network.
+
+	// Resolve target URL
+	url := target
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		// node-1:8080/path → http://<ip>:8080/path
+		parts := strings.SplitN(url, ":", 2)
+		if len(parts) == 2 {
+			nodeName := parts[0]
+			ip, err := e.docker.GetContainerIP(ctx, nodeName, e.networkName)
+			if err == nil {
+				url = fmt.Sprintf("http://%s:%s", ip, parts[1])
+			} else {
+				url = "http://" + target
+			}
+		} else {
+			url = "http://" + target
+		}
+	}
+
+	method := strings.ToUpper(params["method"])
+	if method == "" {
+		method = "GET"
+	}
+
+	// Pick a running container to exec from (stays within Docker network)
+	runner, err := e.pickRunningNode(ctx)
+	if err != nil {
+		return err
+	}
+
+	body := params["body"]
+
+	// Build headers string for the request
+	var headers []string
+	for k, v := range params {
+		if strings.HasPrefix(k, "header.") {
+			headerName := strings.TrimPrefix(k, "header.")
+			headers = append(headers, fmt.Sprintf("%s: %s", headerName, v))
+		}
+	}
+	if body != "" {
+		hasContentType := false
+		for _, h := range headers {
+			if strings.HasPrefix(strings.ToLower(h), "content-type:") {
+				hasContentType = true
+				break
+			}
+		}
+		if !hasContentType {
+			headers = append(headers, "Content-Type: application/json")
+		}
+	}
+
+	// Use BusyBox wget for GET/POST (available on all Alpine images).
+	// For other methods, fall back to a raw shell HTTP request.
+	var cmd string
+	switch method {
+	case "GET":
+		cmd = fmt.Sprintf("wget -q -O - -T 10 '%s' 2>&1", url)
+	case "POST":
+		escaped := strings.ReplaceAll(body, "'", "'\\''")
+		headerFlags := ""
+		for _, h := range headers {
+			headerFlags += fmt.Sprintf(" --header='%s'", h)
+		}
+		cmd = fmt.Sprintf("wget -q -O - -T 10%s --post-data='%s' '%s' 2>&1", headerFlags, escaped, url)
+	default:
+		// For PUT/DELETE/PATCH etc, build a raw HTTP request with sh
+		escaped := strings.ReplaceAll(body, "'", "'\\''")
+		headerFlags := ""
+		for _, h := range headers {
+			headerFlags += fmt.Sprintf(" --header='%s'", h)
+		}
+		// Try busybox wget first (some versions support --post-data for any method via header override)
+		// Fall back: install curl if needed
+		cmd = fmt.Sprintf(
+			"(which curl >/dev/null 2>&1 || apk add --no-cache curl >/dev/null 2>&1) && "+
+				"curl -s -X %s -m 10", method)
+		for _, h := range headers {
+			cmd += fmt.Sprintf(" -H '%s'", h)
+		}
+		if body != "" {
+			cmd += fmt.Sprintf(" -d '%s'", escaped)
+		}
+		cmd += fmt.Sprintf(" '%s' 2>&1", url)
+	}
+
+	output, err := e.docker.Exec(ctx, runner, []string{"sh", "-c", cmd})
+	if err != nil {
+		return fmt.Errorf("http %s %s: %s", method, url, strings.TrimSpace(output))
+	}
+
+	// Check expected status (for wget we can't easily get status codes, so we rely on exit code)
+	// wget exits 0 on 2xx/3xx, non-zero on 4xx/5xx — errors are caught above
+
+	// Check response contains expected string
+	if contains, ok := params["expect_body"]; ok {
+		if !strings.Contains(output, contains) {
+			return fmt.Errorf("http %s %s: response missing %q", method, url, contains)
+		}
+	}
+
+	return nil
+}
+
+// pickRunningNode returns the name of any running nodetester container.
+func (e *Executor) pickRunningNode(ctx context.Context) (string, error) {
+	nodes, err := e.docker.ListNodes(ctx)
+	if err != nil {
+		return "", fmt.Errorf("listing nodes: %w", err)
+	}
+	for _, n := range nodes {
+		if n.State == "running" {
+			return n.Name, nil
+		}
+	}
+	return "", fmt.Errorf("no running containers available to execute HTTP request")
 }
 
 func (e *Executor) partition(ctx context.Context, target string, params map[string]string) error {

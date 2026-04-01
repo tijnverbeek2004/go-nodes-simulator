@@ -68,6 +68,7 @@ func validate(s *types.Scenario) error {
 		"dns-fail":    true,
 		"dns-restore": true,
 		"bandwidth":   true,
+		"http":        true,
 	}
 
 	// Actions that require a 'percent' parameter.

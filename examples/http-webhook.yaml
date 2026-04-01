@@ -1,0 +1,41 @@
+# HTTP webhook events: fire requests at node APIs during chaos.
+# Uses python's built-in HTTP server for a self-contained test.
+nodes:
+  image: python:3-alpine
+  count: 2
+  command: ["sh", "-c", "mkdir -p /srv && echo 'ok' > /srv/health && cd /srv && python -m http.server 8080"]
+
+events:
+  # GET the health endpoint on node-1
+  - at: 5s
+    action: http
+    target: node-1:8080/health
+    params:
+      method: GET
+      expect_body: "ok"
+
+  # GET health on node-2
+  - at: 8s
+    action: http
+    target: node-2:8080/health
+    params:
+      method: GET
+
+  # Inject latency, then verify HTTP still works
+  - at: 12s
+    action: latency
+    target: node-1
+    params:
+      ms: "200"
+
+  - at: 16s
+    action: http
+    target: node-1:8080/health
+    params:
+      method: GET
+      expect_body: "ok"
+
+  # Stop node-2
+  - at: 20s
+    action: stop
+    target: node-2
