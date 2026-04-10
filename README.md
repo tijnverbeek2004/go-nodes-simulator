@@ -4,6 +4,8 @@ A chaos-testing CLI tool for distributed node systems. Spin up real Docker conta
 
 Built for testing blockchain networks, consensus protocols, and P2P applications under adverse conditions.
 
+![nodetester demo](demo.gif)
+
 ## Features
 
 - **Container orchestration** — Spin up 1–50 Docker containers with a single command
